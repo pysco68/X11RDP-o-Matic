@@ -79,6 +79,7 @@ OPTIONS
   --withnopam        : don't include PAM support
   --withpamuserpass  : build with pam userpass support
   --withfreerdp      : build the freerdp1 module
+  --withremotefx     : build with RemoteFX support
   "
   get_branches
   exit
@@ -219,6 +220,7 @@ INSTALL_XRDP=true	# Install xrdp and x11rdp on this system
 BUILD_XRDP=true	# Build and package x11rdp
 BLEED=false		# Not bleeding-edge unless specified
 USE_TURBOJPEG=false     # Turbo JPEG not selected by default
+ENABLE_REMOTEFX=false   # RemoteFX not enabled by default
 
 # Parse the command line for any arguments
 while [ $# -gt 0 ]
@@ -322,6 +324,10 @@ case "$1" in
       CONFIGUREFLAGS+=(--enable-freerdp1)
       REQUIREDPACKAGES+=(libfreerdp-dev)
     ;;
+    --withremotefx)
+      ENABLE_REMOTEFX=true
+      CONFIGUREFLAGS+=(--enable-rfxcoded)
+    ;;
 esac
 shift
 done
@@ -362,7 +368,7 @@ install_package_interactive()
 download_xrdp_interactive()
 {
   [ -d "$WORKINGDIR/xrdp" ] ||
-  git clone --depth 1 "$XRDPGIT" -b "$XRDPBRANCH" "$WORKINGDIR/xrdp" 2>&1 | \
+  git clone --recursive -j8 --shallow-submodules --depth 1 "$XRDPGIT" -b "$XRDPBRANCH" "$WORKINGDIR/xrdp" 2>&1 | \
   dialog  --progressbox "Downloading xrdp source..." 30 100
 }
 
@@ -370,7 +376,7 @@ download_xrdp_noninteractive()
 {
   echo "Downloading xrdp source from the GIT repository..."
   [ -d "$WORKINGDIR/xrdp" ] ||
-  git clone --depth 1 "$XRDPGIT" -b "$XRDPBRANCH" "$WORKINGDIR/xrdp"
+  git clone --recursive -j8 --shallow-submodules --depth 1 "$XRDPGIT" -b "$XRDPBRANCH" "$WORKINGDIR/xrdp"
 }
 
 compile_X11rdp_interactive()
@@ -480,6 +486,17 @@ compile_xrdp_interactive()
   cd "$WORKINGDIR/xrdp-$VERSION"
   ( ./bootstrap && ./configure "$CONFIGUREFLAGS[@]}" ) 2>&1 | dialog  --progressbox "Preparing xrdp source to make a Debian package..." 50 100
 
+  # Step 2.5: prepare librfxcoded
+  if $ENABLE_REMOTEFX
+  then
+    cd "$WORKINGDIR/xrdp-$VERSION/librfxcodec"
+    ( ./bootsrap && ./configure ) 2>&1 | dialog --progressbox "Preparing librfxcodec" 50 100
+    make 2>&1 | dialog  --progressbox "Compiling librfxcodec..." 50 100
+    
+    # go back to main source dir
+    cd "$WORKINGDIR/xrdp-$VERSION"
+  fi
+
   # Step 3 : Use dh-make to create the debian directory package template...
   ( dh_make_y --single --copyright apache --createorig ) 2>&1 | dialog  --progressbox "Preparing xrdp source to make a Debian package..." 50 100
 
@@ -521,6 +538,18 @@ compile_xrdp_noninteractive()
   cd "$WORKINGDIR/xrdp-$VERSION"
   ./bootstrap
   ./configure "${CONFIGUREFLAGS[@]}"
+  
+  # Step 2.5: prepare librfxcoded
+  if $ENABLE_REMOTEFX
+  then
+    echo "Perparing librfxcodec..."
+    cd "$WORKINGDIR/xrdp-$VERSION/librfxcodec"
+    ( ./bootsrap && ./configure )
+    make 2>&1
+    
+    # go back to main source dir
+    cd "$WORKINGDIR/xrdp-$VERSION"
+  fi
 
   # Step 3 : Use dh-make to create the debian directory package template...
   dh_make_y --single --copyright apache --createorig
